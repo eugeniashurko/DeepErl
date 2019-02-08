@@ -1,4 +1,5 @@
 % Collection of utils for reading/writing csv files
+% based on reply https://stackoverflow.com/questions/1532081/csv-parser-in-erlang
 % TODO: make distributed ?
 -module(utils).
 -export([read_csv/1]).
