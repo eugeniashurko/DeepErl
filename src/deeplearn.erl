@@ -1,16 +1,15 @@
 -module(deeplearn).
--export([step/1, synapse_loop/1, init_synapses/1, sigmoid/1,
-		 tanh/1, spawn_nn/5, init_neuron_loop/3, neuron_loop/5]).
+-export([synapse_loop/1, init_synapses/1, sigmoid/1, sigmoid_prime/1,
+		 tanh/1, tanh_prime/1, spawn_nn/5, init_neuron_loop/3, neuron_loop/5]).
 
 
 % Activation functions
-step(X) when X > 0 -> 1;
-step(X) when X == 0 -> 0.5;
-step(_) -> 0.
-
 sigmoid(X) -> 1 / (1 + math:exp(-X)).
+sigmoid_prime(X) -> sigmoid(X) * (1 - sigmoid(X)).
 
 tanh(X) -> 2 * sigmoid(2 * X) - 1.
+tanh_prime(X) -> 1 - tanh(X) * tanh(X).
+
 
 activate(Weights, Values, Activation) ->
 	Val = lists:foldl(
@@ -18,26 +17,29 @@ activate(Weights, Values, Activation) ->
 		0,
 		lists:zipwith(fun(X, Y) -> X * Y end, [1.0 | Values], Weights)),
 	case Activation of
-		step -> step(Val);
 		sigmoid -> sigmoid(Val);
 		tanh -> tanh(Val)
 	end.
 
 % Activation loop of a neuron waiting for all input values to be received
 activation_loop(InNeuron, Value, InNeurons) ->
-	io:format("[~p] Entered activation loop ~w~w~w~n", [self(), InNeuron, Value, InNeurons]),
 	lists:map(
 		fun(OtherInNeuron) ->
 			case OtherInNeuron of 
 				InNeuron -> Value;
 				_ ->
 					receive
-						{input, OtherInNeuron, Value} ->
-							io:format("[~p] Received input ~w from ~p!~n", [self(), Value, OtherInNeuron]),
-							Value;
+						{input, OtherInNeuron, OtherValue} ->
+							io:format("[~p] Received input ~w from ~p!~n", [self(), OtherValue, OtherInNeuron]),
+							OtherValue;
 						stop_input -> 
 							io:format("Stoping activation loop~n", []),
 							stop
+						% X ->
+						% 	io:format("!![~p] RECEIVED WIERD ~w, waiting from: ~p ~n", [self(), X, OtherInNeuron])
+					% after
+					% 	2500 ->
+					% 		io:format("[~p] noone sent anything, mailbox: ~w~n", [self(), c:flush()])
 					end
 			end
 		end,
@@ -47,10 +49,10 @@ activation_loop(InNeuron, Value, InNeurons) ->
 synapse_loop(OutNeurons) ->
 	receive
 		{out, NewOutNeurons} ->
-			io:format("New synapse output ~w ~n", [NewOutNeurons]),
+			io:format("[~p] New synapse output ~w ~n", [self(), NewOutNeurons]),
 			synapse_loop(NewOutNeurons);
 		{input, Value} ->
-			io:format("New synapse input ~w ~n", [Value]),
+			io:format("[~p] New synapse input ~w ~n", [self(), Value]),
 			lists:map(
 				fun(X) -> X ! {input, self(), Value} end,
 				OutNeurons),
@@ -81,7 +83,7 @@ neuron_loop(Monitor, InNeurons, OutNeurons, Weights, Activation) ->
 		pong -> 
 			ok;
 		pang ->
-			io:format("CANNOT CONNECT TO MONITOR: ~p!~n", [Monitor]),
+			io:format("CANNOT CONNECT TO THE MONITOR: ~p!~n", [Monitor]),
 			neuron_loop(Monitor, InNeurons, OutNeurons, Weights, Activation)
 	end,
 	receive
@@ -92,12 +94,10 @@ neuron_loop(Monitor, InNeurons, OutNeurons, Weights, Activation) ->
 				false -> 
 					ActivationValue = activate(Weights, Values, Activation),
 					io:format("[~p] Activated successfully with ~p!~n", [self(), ActivationValue]),
-					io:format("[~p] will send to ~w~n", [self(), OutNeurons]),
 					lists:map(
-						fun(X) -> 
-							X ! {input, self(), ActivationValue}
-						end,
+						fun(X) -> X ! {input, self(), ActivationValue} end,
 						OutNeurons);
+					% io:format("[~p] will send to ~w~n", [self(), OutNeurons]);
 				_ -> 
 					io:format("Activation of ~p failed!~n", [self()]),
 					not_activated
